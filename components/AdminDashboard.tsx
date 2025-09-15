@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { storage } from '@/lib/utils/storage';
-import { hashPassword } from '@/lib/utils/auth';
 import { User } from '@/lib/types';
 import { 
   Users, 
@@ -18,8 +16,6 @@ import {
   X
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
-
-const generateId = () => Math.random().toString(36).substr(2, 9);
 
 export const AdminDashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -40,44 +36,43 @@ export const AdminDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const loadUsers = () => {
-    const allUsers = storage.getUsers().filter(u => u.role === 'user'); // Only show regular users
-    setUsers(allUsers);
+  const loadUsers = async () => {
+    try {
+      const response = await fetch('/api/users');
+      if (response.ok) {
+        const usersData = await response.json();
+        setUsers(usersData);
+      }
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
     try {
-      // Check if username already exists
-      const existingUser = storage.getUserByUsername(newUser.username);
-      if (existingUser) {
-        setError('Username already exists');
-        return;
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newUser),
+      });
+
+      if (response.ok) {
+        setSuccess('User created successfully!');
+        setNewUser({ username: '', name: '', password: '' });
+        setShowCreateForm(false);
+        loadUsers();
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to create user');
+        setTimeout(() => setError(''), 3000);
       }
-
-      const user: User = {
-        id: generateId(),
-        username: newUser.username,
-        name: newUser.name,
-        password: hashPassword(newUser.password),
-        role: 'user',
-        createdAt: new Date().toISOString(),
-        isCheckedIn: false,
-        lastActivity: new Date().toISOString(),
-        totalWorkingTime: 0
-      };
-
-      storage.createUser(user);
-      
-      setSuccess('User created successfully!');
-      setNewUser({ username: '', name: '', password: '' });
-      setShowCreateForm(false);
-      loadUsers();
-      
-      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError('Failed to create user');
       setTimeout(() => setError(''), 3000);
@@ -86,6 +81,9 @@ export const AdminDashboard: React.FC = () => {
 
   const getStatusColor = (user: User) => {
     if (user.isCheckedIn) {
+      if (user.isPaused) {
+        return 'text-orange-400 bg-orange-400/10';
+      }
       return 'text-green-400 bg-green-400/10';
     }
     return 'text-slate-400 bg-slate-400/10';
@@ -93,9 +91,12 @@ export const AdminDashboard: React.FC = () => {
 
   const getStatusText = (user: User) => {
     if (user.isCheckedIn) {
-      return 'Checked In';
+      if (user.isPaused) {
+        return 'Paused';
+      }
+      return 'Working';
     }
-    return 'Checked Out';
+    return 'Offline';
   };
 
   const formatTime = (minutes: number) => {
@@ -145,7 +146,7 @@ export const AdminDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-slate-400 text-sm">Active Users</p>
-                <p className="text-2xl font-bold">{users.filter(u => u.isCheckedIn).length}</p>
+                <p className="text-2xl font-bold">{users.filter(u => u.isCheckedIn && !u.isPaused).length}</p>
               </div>
               <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center">
                 <Activity className="w-6 h-6" />
@@ -274,7 +275,7 @@ export const AdminDashboard: React.FC = () => {
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                  <tr key={user._id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="py-4 px-4 font-medium">{user.name}</td>
                     <td className="py-4 px-4 text-slate-300">{user.username}</td>
                     <td className="py-4 px-4">

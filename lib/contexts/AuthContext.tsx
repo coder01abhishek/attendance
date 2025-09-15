@@ -2,8 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { AuthContextType, AuthUser } from '../types';
-import { authenticateUser, verifyToken } from '../utils/auth';
-import { initializeSeedData } from '../utils/seedData';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -24,22 +22,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Initialize seed data
-    initializeSeedData();
-    
-    // Check for existing token on app load
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      const decoded = verifyToken(token);
-      if (decoded) {
-        setUser({
-          id: decoded.id,
-          username: decoded.username,
-          name: decoded.name,
-          role: decoded.role
-        });
-      } else {
-        localStorage.removeItem('auth_token');
+    // Check for existing user in localStorage
+    const storedUser = localStorage.getItem('auth_user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (error) {
+        localStorage.removeItem('auth_user');
       }
     }
     setIsLoading(false);
@@ -47,15 +36,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      const result = authenticateUser(username, password);
-      if (result) {
-        localStorage.setItem('auth_token', result.token);
-        setUser({
-          id: result.user.id,
-          username: result.user.username,
-          name: result.user.name,
-          role: result.user.role
-        });
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+        localStorage.setItem('auth_user', JSON.stringify(data.user));
         return true;
       }
       return false;
@@ -66,7 +58,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
     setUser(null);
   };
 
